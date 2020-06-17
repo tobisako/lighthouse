@@ -93,7 +93,7 @@ impl<T: EthSpec> Attestation<T> {
         self.data
             .index
             .safe_rem(spec.attestation_subnet_count)
-            .map(SubnetId::new)
+            .map(Into::into)
             .map_err(Error::SubnetCountIsZero)
     }
 }
