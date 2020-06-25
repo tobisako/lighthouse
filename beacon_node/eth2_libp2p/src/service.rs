@@ -11,7 +11,7 @@ use libp2p::core::{
     ConnectedPoint,
 };
 use libp2p::{
-    core, noise,
+    core, noise, secio,
     swarm::{NetworkBehaviour, SwarmBuilder, SwarmEvent},
     PeerId, Swarm, Transport,
 };
@@ -375,10 +375,10 @@ fn build_transport(
     // Authentication
     Ok(transport
         .upgrade(core::upgrade::Version::V1)
-        .authenticate(generate_noise_config(&local_private_key))
+        .authenticate(secio::SecioConfig::new(local_private_key))
         .multiplex(core::upgrade::SelectUpgrade::new(
-            libp2p::yamux::Config::default(),
             libp2p::mplex::MplexConfig::new(),
+            libp2p::yamux::Config::default(),
         ))
         .map(|(peer, muxer), _| (peer, core::muxing::StreamMuxerBox::new(muxer)))
         .timeout(Duration::from_secs(20))
@@ -460,7 +460,7 @@ fn load_private_key(config: &NetworkConfig, log: &slog::Logger) -> Keypair {
 }
 
 /// Generate authenticated XX Noise config from identity keys
-fn generate_noise_config(
+fn _generate_noise_config(
     identity_keypair: &Keypair,
 ) -> noise::NoiseAuthenticated<noise::XX, noise::X25519Spec, ()> {
     let static_dh_keys = noise::Keypair::<noise::X25519Spec>::new()
