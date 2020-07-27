@@ -28,6 +28,8 @@ use tokio_util::{
 };
 use types::{BeaconBlock, EthSpec, Hash256, MainnetEthSpec, Signature, SignedBeaconBlock};
 
+use libfuzzer_sys::arbitrary;
+
 lazy_static! {
     // Note: Hardcoding the `EthSpec` type for `SignedBeaconBlock` as min/max values is
     // same across different `EthSpec` implementations.
@@ -68,7 +70,7 @@ const TTFB_TIMEOUT: u64 = 5;
 const REQUEST_TIMEOUT: u64 = 15;
 
 /// Protocol names to be used.
-#[derive(Debug, Clone, Copy)]
+#[derive(arbitrary::Arbitrary, Debug, Clone, Copy)]
 pub enum Protocol {
     /// The Status protocol name.
     Status,

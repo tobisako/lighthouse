@@ -25,12 +25,14 @@ pub use methods::{
     BlocksByRangeRequest, BlocksByRootRequest, GoodbyeReason, MaxRequestBlocks,
     RPCResponseErrorCode, RequestId, ResponseTermination, StatusMessage, MAX_REQUEST_BLOCKS,
 };
-pub use protocol::{Protocol, RPCError};
+pub use protocol::{Encoding, Protocol, ProtocolId, RPCError, Version};
 
 pub(crate) mod codec;
 mod handler;
 pub mod methods;
 mod protocol;
+
+pub use codec::SSZSnappyInboundCodec;
 
 /// RPC events sent from Lighthouse.
 #[derive(Debug, Clone)]
