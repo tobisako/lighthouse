@@ -295,6 +295,7 @@ impl<T: BeaconChainTypes> VerifiedAggregatedAttestation<T> {
         let attestation_root = attestation.tree_hash_root();
         if chain
             .observed_attestations
+            .write()
             .is_known(attestation, attestation_root)
             .map_err(|e| Error::BeaconChainError(e.into()))?
         {
@@ -308,6 +309,7 @@ impl<T: BeaconChainTypes> VerifiedAggregatedAttestation<T> {
         // Note: do not observe yet, only observe once the attestation has been verfied.
         match chain
             .observed_aggregators
+            .read()
             .validator_has_been_observed(attestation, aggregator_index as usize)
         {
             Ok(true) => Err(Error::AggregatorAlreadyKnown(aggregator_index)),
@@ -369,6 +371,7 @@ impl<T: BeaconChainTypes> VerifiedAggregatedAttestation<T> {
         // attestations processed at the same time could be published.
         if let ObserveOutcome::AlreadyKnown = chain
             .observed_attestations
+            .write()
             .observe_attestation(attestation, Some(attestation_root))
             .map_err(|e| Error::BeaconChainError(e.into()))?
         {
@@ -381,6 +384,7 @@ impl<T: BeaconChainTypes> VerifiedAggregatedAttestation<T> {
         // attestations processed at the same time could be published.
         if chain
             .observed_aggregators
+            .write()
             .observe_validator(&attestation, aggregator_index as usize)
             .map_err(BeaconChainError::from)?
         {
@@ -464,6 +468,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
          */
         if chain
             .observed_attesters
+            .read()
             .validator_has_been_observed(&attestation, validator_index as usize)
             .map_err(BeaconChainError::from)?
         {
@@ -484,6 +489,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
         // process them in different threads.
         if chain
             .observed_attesters
+            .write()
             .observe_validator(&attestation, validator_index as usize)
             .map_err(BeaconChainError::from)?
         {
