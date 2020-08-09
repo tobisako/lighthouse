@@ -533,7 +533,7 @@ name = "boot_node"
 version = "0.1.0"
 dependencies = [
  "clap",
- "discv5",
+ "discv5 0.1.0-alpha.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "eth2_libp2p",
  "futures 0.3.5",
  "log 0.4.11",
@@ -1196,8 +1196,7 @@ checksum = "212d0f5754cb6769937f4501cc0e67f4f4483c8d2c3e1e922ee9edbe4ab4c7c0"
 [[package]]
 name = "discv5"
 version = "0.1.0-alpha.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7083584562c5b36f929dbe621437a911eef4f8ac73bab1b1c64c8f556212943"
+source = "git+https://github.com/sigp/discv5?branch=lock-bug#824ca089693e062d9b05b373859d8b4e9bc7b958"
 dependencies = [
  "arrayvec",
  "digest 0.8.1",
@@ -1212,6 +1211,35 @@ dependencies = [
  "log 0.4.11",
  "lru_time_cache",
  "multihash",
+ "net2",
+ "openssl",
+ "parking_lot 0.11.0",
+ "rand 0.7.3",
+ "rlp",
+ "sha2 0.8.2",
+ "smallvec 1.4.1",
+ "tokio 0.2.22",
+ "uint",
+ "zeroize",
+]
+
+[[package]]
+name = "discv5"
+version = "0.1.0-alpha.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7083584562c5b36f929dbe621437a911eef4f8ac73bab1b1c64c8f556212943"
+dependencies = [
+ "arrayvec",
+ "digest 0.8.1",
+ "enr",
+ "fnv",
+ "futures 0.3.5",
+ "hex 0.4.2",
+ "hkdf",
+ "lazy_static",
+ "libsecp256k1",
+ "log 0.4.11",
+ "lru_time_cache",
  "net2",
  "openssl",
  "parking_lot 0.11.0",
@@ -1334,7 +1362,7 @@ name = "environment"
 version = "0.1.2"
 dependencies = [
  "ctrlc",
- "discv5",
+ "discv5 0.1.0-alpha.7 (git+https://github.com/sigp/discv5?branch=lock-bug)",
  "eth2_config",
  "eth2_testnet_config",
  "exit-future",
@@ -1479,7 +1507,7 @@ version = "0.2.0"
 dependencies = [
  "base64 0.12.3",
  "dirs",
- "discv5",
+ "discv5 0.1.0-alpha.7 (git+https://github.com/sigp/discv5?branch=lock-bug)",
  "environment",
  "error-chain",
  "eth2_ssz",
