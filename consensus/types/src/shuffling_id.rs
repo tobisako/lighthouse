@@ -3,13 +3,31 @@ use serde_derive::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use std::hash::Hash;
 
+/// Can be used to key (ID) the shuffling in some chain, in some epoch.
+///
+/// ## Reasoning
+///
+/// We say that the ID of some shuffling is always equal to a 2-tuple:
+///
+/// - The epoch for which the shuffling should be effective.
+/// - A block root, where this is the root at the *last* slot of the penultimate epoch. I.e., the
+/// final block which contributed a randao reveal to the seed for the shuffling.
+///
+/// The struct stores exactly that 2-tuple.
 #[derive(Debug, PartialEq, Clone, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct ShufflingId {
-    shuffling_epoch: Epoch,
+    pub shuffling_epoch: Epoch,
     shuffling_decision_block: Hash256,
 }
 
 impl ShufflingId {
+    /// Using the given `state`, return the shuffling id for the shuffling at the given
+    /// `relative_epoch`.
+    ///
+    /// The `block_root` provided should be either:
+    ///
+    /// - The root of the block which produced this state.
+    /// - If the state is from a skip slot, the root of the latest block in that state.
     pub fn new<E: EthSpec>(
         block_root: Hash256,
         state: &BeaconState<E>,
@@ -40,10 +58,6 @@ impl ShufflingId {
             shuffling_epoch,
             shuffling_decision_block,
         }
-    }
-
-    pub fn set_epoch(&mut self, epoch: Epoch) {
-        self.shuffling_epoch = epoch;
     }
 }
 
