@@ -722,6 +722,7 @@ impl<T: BeaconChainTypes> Stream for AttestationService<T> {
     type Item = AttServiceMessage;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        println!("network attn service: start");
         // update the waker if needed
         if let Some(waker) = &self.waker {
             if waker.will_wake(cx.waker()) {
@@ -730,6 +731,8 @@ impl<T: BeaconChainTypes> Stream for AttestationService<T> {
         } else {
             self.waker = Some(cx.waker().clone());
         }
+
+        println!("network attn service: 1");
 
         // process any peer discovery events
         match self.discover_peers.poll_next_unpin(cx) {
@@ -740,6 +743,8 @@ impl<T: BeaconChainTypes> Stream for AttestationService<T> {
             Poll::Ready(None) | Poll::Pending => {}
         }
 
+        println!("network attn service: 2");
+
         // process any subscription events
         match self.subscriptions.poll_next_unpin(cx) {
             Poll::Ready(Some(Ok(exact_subnet))) => self.handle_subscriptions(exact_subnet),
@@ -748,6 +753,8 @@ impl<T: BeaconChainTypes> Stream for AttestationService<T> {
             }
             Poll::Ready(None) | Poll::Pending => {}
         }
+
+        println!("network attn service: 3");
 
         // process any un-subscription events
         match self.unsubscriptions.poll_next_unpin(cx) {
@@ -758,6 +765,8 @@ impl<T: BeaconChainTypes> Stream for AttestationService<T> {
             Poll::Ready(None) | Poll::Pending => {}
         }
 
+        println!("network attn service: 4");
+
         // process any random subnet expiries
         match self.random_subnets.poll_next_unpin(cx) {
             Poll::Ready(Some(Ok(subnet))) => self.handle_random_subnet_expiry(subnet),
@@ -766,6 +775,8 @@ impl<T: BeaconChainTypes> Stream for AttestationService<T> {
             }
             Poll::Ready(None) | Poll::Pending => {}
         }
+
+        println!("network attn service: 5");
 
         // process any known validator expiries
         match self.known_validators.poll_next_unpin(cx) {
@@ -777,15 +788,21 @@ impl<T: BeaconChainTypes> Stream for AttestationService<T> {
             }
             Poll::Ready(None) | Poll::Pending => {}
         }
+
+        println!("network attn service: 1");
         // poll to remove entries on expiration, no need to act on expiration events
         if let Poll::Ready(Some(Err(e))) = self.aggregate_validators_on_subnet.poll_next_unpin(cx) {
             error!(self.log, "Failed to check for aggregate validator on subnet expirations"; "error"=> e);
         }
 
+        println!("network attn service: 6");
+
         // process any generated events
         if let Some(event) = self.events.pop_front() {
             return Poll::Ready(Some(event));
         }
+
+        println!("network attn service: end");
 
         Poll::Pending
     }

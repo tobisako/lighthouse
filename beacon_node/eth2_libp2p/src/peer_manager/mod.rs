@@ -729,10 +729,13 @@ impl<TSpec: EthSpec> Stream for PeerManager<TSpec> {
     type Item = PeerManagerEvent;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        println!("peer manger poll: start");
         // perform the heartbeat when necessary
         while let Poll::Ready(Some(_)) = self.heartbeat.poll_next_unpin(cx) {
             self.heartbeat();
         }
+
+        println!("peer manger poll: after heart beat");
 
         // handle any discovery events
         while let Poll::Ready(event) = self.discovery.poll(cx) {
@@ -741,6 +744,8 @@ impl<TSpec: EthSpec> Stream for PeerManager<TSpec> {
                 DiscoveryEvent::QueryResult(results) => self.peers_discovered(results),
             }
         }
+
+        println!("peer manger poll: after poll 1");
 
         // poll the timeouts for pings and status'
         loop {
@@ -755,6 +760,8 @@ impl<TSpec: EthSpec> Stream for PeerManager<TSpec> {
                 Poll::Ready(None) | Poll::Pending => break,
             }
         }
+
+        println!("peer manger poll: after poll 2");
 
         // We don't want to update peers during syncing, since this may result in a new chain being
         // synced which leads to inefficient re-downloads of blocks.
@@ -773,11 +780,15 @@ impl<TSpec: EthSpec> Stream for PeerManager<TSpec> {
             }
         }
 
+        println!("peer manger poll: after poll 3");
+
         if !self.events.is_empty() {
             return Poll::Ready(Some(self.events.remove(0)));
         } else {
             self.events.shrink_to_fit();
         }
+
+        println!("peer manger poll: done");
 
         Poll::Pending
     }

@@ -81,7 +81,8 @@ pub fn start_server<T: BeaconChainTypes>(
 
         async move {
             Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
-                router::route(
+                println!("rest api: start");
+                let result = router::route(
                     req,
                     beacon_chain.clone(),
                     network_globals.clone(),
@@ -92,7 +93,9 @@ pub fn start_server<T: BeaconChainTypes>(
                     db_path.clone(),
                     freezer_db_path.clone(),
                     events.clone(),
-                )
+                );
+                println!("rest api: end");
+                result
             }))
         }
     });

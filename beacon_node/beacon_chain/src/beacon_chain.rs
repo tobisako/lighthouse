@@ -880,6 +880,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         attestation: Attestation<T::EthSpec>,
         subnet_id: SubnetId,
     ) -> Result<VerifiedUnaggregatedAttestation<T>, AttestationError> {
+        println!("beacon chain: verify_unaggregated_attestation_for_gossip");
         metrics::inc_counter(&metrics::UNAGGREGATED_ATTESTATION_PROCESSING_REQUESTS);
         let _timer =
             metrics::start_timer(&metrics::UNAGGREGATED_ATTESTATION_GOSSIP_VERIFICATION_TIMES);
@@ -896,6 +897,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         signed_aggregate: SignedAggregateAndProof<T::EthSpec>,
     ) -> Result<VerifiedAggregatedAttestation<T>, AttestationError> {
+        println!("beacon chain: verify_aggregated_attestation_for_gossip");
         metrics::inc_counter(&metrics::AGGREGATED_ATTESTATION_PROCESSING_REQUESTS);
         let _timer =
             metrics::start_timer(&metrics::AGGREGATED_ATTESTATION_GOSSIP_VERIFICATION_TIMES);
@@ -937,6 +939,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         unaggregated_attestation: VerifiedUnaggregatedAttestation<T>,
     ) -> Result<VerifiedUnaggregatedAttestation<T>, AttestationError> {
+        println!("beacon chain: add_to_naive_aggregation_pool");
         let _timer = metrics::start_timer(&metrics::ATTESTATION_PROCESSING_APPLY_TO_AGG_POOL);
 
         let attestation = unaggregated_attestation.attestation();
@@ -982,6 +985,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         signed_aggregate: VerifiedAggregatedAttestation<T>,
     ) -> Result<VerifiedAggregatedAttestation<T>, AttestationError> {
+        println!("beacon chain: add_to_block_inclusion_pool");
         let _timer = metrics::start_timer(&metrics::ATTESTATION_PROCESSING_APPLY_TO_OP_POOL);
 
         // If there's no eth1 chain then it's impossible to produce blocks and therefore
@@ -1158,6 +1162,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         chain_segment: Vec<SignedBeaconBlock<T::EthSpec>>,
     ) -> ChainSegmentResult<T::EthSpec> {
+        println!("beacon chain: process_chain_segment");
         let mut filtered_chain_segment = Vec::with_capacity(chain_segment.len());
         let mut imported_blocks = 0;
 
@@ -1299,6 +1304,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         block: SignedBeaconBlock<T::EthSpec>,
     ) -> Result<GossipVerifiedBlock<T>, BlockError<T::EthSpec>> {
+        println!("beacon chain: verify_block_for_gossip");
         let slot = block.message.slot;
         let graffiti_string = String::from_utf8(block.message.body.graffiti[..].to_vec())
             .unwrap_or_else(|_| format!("{:?}", &block.message.body.graffiti[..]));
@@ -1345,6 +1351,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         unverified_block: B,
     ) -> Result<Hash256, BlockError<T::EthSpec>> {
+        println!("beacon chain: process_block");
         // Start the Prometheus timer.
         let _full_timer = metrics::start_timer(&metrics::BLOCK_PROCESSING_TIMES);
 
@@ -1424,6 +1431,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         fully_verified_block: FullyVerifiedBlock<T>,
     ) -> Result<Hash256, BlockError<T::EthSpec>> {
+        println!("beacon chain: import_block");
         let signed_block = fully_verified_block.block;
         let block_root = fully_verified_block.block_root;
         let mut state = fully_verified_block.state;

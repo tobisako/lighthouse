@@ -680,10 +680,12 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
     type OutEvent = BehaviourEvent<TSpec>;
 
     fn new_handler(&mut self) -> Self::ProtocolsHandler {
+        println!("libp2p behaviour: new handler");
         BehaviourHandler::new(&mut self.gossipsub, &mut self.eth2_rpc, &mut self.identify)
     }
 
     fn addresses_of_peer(&mut self, peer_id: &PeerId) -> Vec<Multiaddr> {
+        println!("libp2p behaviour: addresses_of_peer");
         self.peer_manager.addresses_of_peer(peer_id)
     }
 
@@ -694,6 +696,7 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
         conn_id: &ConnectionId,
         endpoint: &ConnectedPoint,
     ) {
+        println!("libp2p behaviour: inject connection closed");
         // If the peer manager (and therefore the behaviour's) believe this peer connected, inform
         // about the disconnection.
         if self.network_globals.peers.read().is_connected(&peer_id) {
@@ -704,6 +707,7 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
 
     // This gets called once there are no more active connections.
     fn inject_disconnected(&mut self, peer_id: &PeerId) {
+        println!("libp2p behaviour: inject disconnected");
         // If the application/behaviour layers thinks this peer has connected inform it of the disconnect.
         if self.network_globals.peers.read().is_connected(&peer_id) {
             // Inform the application.
@@ -732,6 +736,7 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
         conn_id: &ConnectionId,
         endpoint: &ConnectedPoint,
     ) {
+        println!("libp2p behaviour: inject_connection_established");
         let goodbye_reason: Option<GoodbyeReason> = if self.peer_manager.is_banned(peer_id) {
             // If the peer is banned, send goodbye with reason banned.
             Some(GoodbyeReason::Banned)
@@ -782,6 +787,7 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
 
     // This gets called on the initial connection establishment.
     fn inject_connected(&mut self, peer_id: &PeerId) {
+        println!("libp2p behaviour: inject connected");
         // If the PeerManager has connected this peer, inform the behaviours
         if !self.network_globals.peers.read().is_connected(&peer_id) {
             return;
@@ -803,31 +809,38 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
         addr: &Multiaddr,
         error: &dyn std::error::Error,
     ) {
+        println!("libp2p behaviour: inject_addr_reach_failure");
         delegate_to_behaviours!(self, inject_addr_reach_failure, peer_id, addr, error);
     }
 
     fn inject_dial_failure(&mut self, peer_id: &PeerId) {
+        println!("libp2p behaviour: inject deal feature");
         // Could not dial the peer, inform the peer manager.
         self.peer_manager.notify_dial_failure(&peer_id);
         delegate_to_behaviours!(self, inject_dial_failure, peer_id);
     }
 
     fn inject_new_listen_addr(&mut self, addr: &Multiaddr) {
+        println!("libp2p behaviour: inject new listen addr");
         delegate_to_behaviours!(self, inject_new_listen_addr, addr);
     }
 
     fn inject_expired_listen_addr(&mut self, addr: &Multiaddr) {
+        println!("libp2p behaviour: inject expired listen addr");
         delegate_to_behaviours!(self, inject_expired_listen_addr, addr);
     }
 
     fn inject_new_external_addr(&mut self, addr: &Multiaddr) {
+        println!("libp2p behaviour: inject external addr");
         delegate_to_behaviours!(self, inject_new_external_addr, addr);
     }
 
     fn inject_listener_error(&mut self, id: ListenerId, err: &(dyn std::error::Error + 'static)) {
+        println!("libp2p behaviour: inject listener error");
         delegate_to_behaviours!(self, inject_listener_error, id, err);
     }
     fn inject_listener_closed(&mut self, id: ListenerId, reason: Result<(), &std::io::Error>) {
+        println!("libp2p behaviour: inject listener closed");
         delegate_to_behaviours!(self, inject_listener_closed, id, reason);
     }
 
@@ -837,6 +850,7 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
         conn_id: ConnectionId,
         event: <Self::ProtocolsHandler as ProtocolsHandler>::OutEvent,
     ) {
+        println!("libp2p behaviour: inject event");
         // If the peer is not supposed to be connected (undergoing active disconnection,
         // don't process any of its messages.
         if !self.network_globals.peers.read().is_connected(&peer_id) {
@@ -862,6 +876,7 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
         cx: &mut Context,
         poll_params: &mut impl PollParameters,
     ) -> Poll<NBAction<<Self::ProtocolsHandler as ProtocolsHandler>::InEvent, Self::OutEvent>> {
+        println!("libp2p behaviour: start");
         // update the waker if needed
         if let Some(waker) = &self.waker {
             if waker.will_wake(cx.waker()) {
@@ -916,11 +931,17 @@ impl<TSpec: EthSpec> NetworkBehaviour for Behaviour<TSpec> {
             };
         }
 
+        println!("libp2p behaviour: before gossipsub");
         poll_behaviour!(gossipsub, on_gossip_event, DelegateIn::Gossipsub);
+        println!("libp2p behaviour: before eth2_rpc");
         poll_behaviour!(eth2_rpc, on_rpc_event, DelegateIn::RPC);
+        println!("libp2p behaviour: before identify");
         poll_behaviour!(identify, on_identify_event, DelegateIn::Identify);
 
-        self.custom_poll(cx)
+        println!("libp2p behaviour: before custom poll");
+        let r = self.custom_poll(cx);
+        println!("libp2p behaviour: done");
+        r
     }
 }
 

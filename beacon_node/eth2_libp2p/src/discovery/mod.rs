@@ -692,6 +692,7 @@ impl<TSpec: EthSpec> Discovery<TSpec> {
 
     // Main execution loop to be driven by the peer manager.
     pub fn poll(&mut self, cx: &mut Context) -> Poll<DiscoveryEvent> {
+        println!("discovery poll: start");
         if !self.started {
             return Poll::Pending;
         }
@@ -699,11 +700,15 @@ impl<TSpec: EthSpec> Discovery<TSpec> {
         // Process the query queue
         self.process_queue();
 
+        println!("discovery poll: process queue");
+
         // Drive the queries and return any results from completed queries
         if let Some(results) = self.poll_queries(cx) {
             // return the result to the peer manager
             return Poll::Ready(DiscoveryEvent::QueryResult(results));
         }
+
+        println!("discovery poll: poll queries");
 
         // Process the server event stream
         match self.event_stream {
@@ -754,6 +759,7 @@ impl<TSpec: EthSpec> Discovery<TSpec> {
                 }
             }
         }
+        println!("discovery poll: done");
         Poll::Pending
     }
 }

@@ -269,11 +269,13 @@ where
             Self::OutEvent,
         >,
     > {
+        println!("libp2p rpc poll: start");
         // let the rate limiter prune
         let _ = self.limiter.poll_unpin(cx);
         if !self.events.is_empty() {
             return Poll::Ready(self.events.remove(0));
         }
+        println!("libp2p rpc poll: end");
         Poll::Pending
     }
 }
