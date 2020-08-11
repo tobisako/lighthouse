@@ -41,7 +41,7 @@ const PING_INTERVAL: u64 = 30;
 
 /// The heartbeat performs regular updates such as updating reputations and performing discovery
 /// requests. This defines the interval in seconds.
-const HEARTBEAT_INTERVAL: u64 = 30;
+const HEARTBEAT_INTERVAL: u64 = 25;
 
 /// A fraction of `PeerManager::target_peers` that we allow to connect to us in excess of
 /// `PeerManager::target_peers`. For clarity, if `PeerManager::target_peers` is 50 and
