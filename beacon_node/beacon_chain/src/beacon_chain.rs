@@ -29,7 +29,7 @@ use crate::BeaconSnapshot;
 use fork_choice::ForkChoice;
 use itertools::process_results;
 use operation_pool::{OperationPool, PersistedOperationPool};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use slog::{crit, debug, error, info, trace, warn, Logger};
 use slot_clock::SlotClock;
 use state_processing::{
@@ -164,7 +164,7 @@ pub struct BeaconChain<T: BeaconChainTypes> {
     /// Persistent storage for blocks, states, etc. Typically an on-disk store, such as LevelDB.
     pub store: Arc<HotColdDB<T::EthSpec, T::HotStore, T::ColdStore>>,
     /// Database migrator for running background maintenance on the store.
-    pub store_migrator: T::StoreMigrator,
+    pub(crate) store_migrator: T::StoreMigrator,
     /// Reports the current slot, typically based upon the system clock.
     pub slot_clock: T::SlotClock,
     /// Stores all operations (e.g., `Attestation`, `Deposit`, etc) that are candidates for
@@ -175,22 +175,23 @@ pub struct BeaconChain<T: BeaconChainTypes> {
     ///
     /// This pool accepts `Attestation` objects that only have one aggregation bit set and provides
     /// a method to get an aggregated `Attestation` for some `AttestationData`.
-    pub naive_aggregation_pool: RwLock<NaiveAggregationPool<T::EthSpec>>,
+    pub(crate) naive_aggregation_pool: RwLock<NaiveAggregationPool<T::EthSpec>>,
     /// Contains a store of attestations which have been observed by the beacon chain.
-    pub observed_attestations: ObservedAttestations<T::EthSpec>,
+    pub(crate) observed_attestations: RwLock<ObservedAttestations<T::EthSpec>>,
     /// Maintains a record of which validators have been seen to attest in recent epochs.
-    pub observed_attesters: ObservedAttesters<T::EthSpec>,
+    pub(crate) observed_attesters: RwLock<ObservedAttesters<T::EthSpec>>,
     /// Maintains a record of which validators have been seen to create `SignedAggregateAndProofs`
     /// in recent epochs.
-    pub observed_aggregators: ObservedAggregators<T::EthSpec>,
+    pub(crate) observed_aggregators: RwLock<ObservedAggregators<T::EthSpec>>,
     /// Maintains a record of which validators have proposed blocks for each slot.
-    pub observed_block_producers: ObservedBlockProducers<T::EthSpec>,
+    pub(crate) observed_block_producers: RwLock<ObservedBlockProducers<T::EthSpec>>,
     /// Maintains a record of which validators have submitted voluntary exits.
-    pub observed_voluntary_exits: ObservedOperations<SignedVoluntaryExit, T::EthSpec>,
+    pub(crate) observed_voluntary_exits: Mutex<ObservedOperations<SignedVoluntaryExit, T::EthSpec>>,
     /// Maintains a record of which validators we've seen proposer slashings for.
-    pub observed_proposer_slashings: ObservedOperations<ProposerSlashing, T::EthSpec>,
+    pub(crate) observed_proposer_slashings: Mutex<ObservedOperations<ProposerSlashing, T::EthSpec>>,
     /// Maintains a record of which validators we've seen attester slashings for.
-    pub observed_attester_slashings: ObservedOperations<AttesterSlashing<T::EthSpec>, T::EthSpec>,
+    pub(crate) observed_attester_slashings:
+        Mutex<ObservedOperations<AttesterSlashing<T::EthSpec>, T::EthSpec>>,
     /// Provides information from the Ethereum 1 (PoW) chain.
     pub eth1_chain: Option<Eth1Chain<T::Eth1Chain, T::EthSpec>>,
     /// Stores a "snapshot" of the chain at the time the head-of-the-chain block was received.
@@ -1086,9 +1087,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     ) -> Result<ObservationOutcome<SignedVoluntaryExit>, Error> {
         // NOTE: this could be more efficient if it avoided cloning the head state
         let wall_clock_state = self.wall_clock_state()?;
-        Ok(self
-            .observed_voluntary_exits
-            .verify_and_observe(exit, &wall_clock_state, &self.spec)?)
+        Ok(self.observed_voluntary_exits.lock().verify_and_observe(
+            exit,
+            &wall_clock_state,
+            &self.spec,
+        )?)
     }
 
     /// Accept a pre-verified exit and queue it for inclusion in an appropriate block.
@@ -1104,7 +1107,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         proposer_slashing: ProposerSlashing,
     ) -> Result<ObservationOutcome<ProposerSlashing>, Error> {
         let wall_clock_state = self.wall_clock_state()?;
-        Ok(self.observed_proposer_slashings.verify_and_observe(
+        Ok(self.observed_proposer_slashings.lock().verify_and_observe(
             proposer_slashing,
             &wall_clock_state,
             &self.spec,
@@ -1124,7 +1127,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         attester_slashing: AttesterSlashing<T::EthSpec>,
     ) -> Result<ObservationOutcome<AttesterSlashing<T::EthSpec>>, Error> {
         let wall_clock_state = self.wall_clock_state()?;
-        Ok(self.observed_attester_slashings.verify_and_observe(
+        Ok(self.observed_attester_slashings.lock().verify_and_observe(
             attester_slashing,
             &wall_clock_state,
             &self.spec,
@@ -1356,6 +1359,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // A small closure to group the verification and import errors.
         let import_block = |unverified_block: B| -> Result<Hash256, BlockError<T::EthSpec>> {
             let fully_verified = unverified_block.into_fully_verified_block(self)?;
+            debug!(
+                self.log,
+                "Block is fully verified";
+                "block_root" => format!("{:?}", fully_verified.block_root),
+            );
             self.import_block(fully_verified)
         };
 
@@ -1435,7 +1443,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // Iterate through the attestations in the block and register them as an "observed
         // attestation". This will stop us from propagating them on the gossip network.
         for a in &signed_block.message.body.attestations {
-            match self.observed_attestations.observe_attestation(a, None) {
+            match self
+                .observed_attestations
+                .write()
+                .observe_attestation(a, None)
+            {
                 // If the observation was successful or if the slot for the attestation was too
                 // low, continue.
                 //
@@ -1494,6 +1506,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 .map_err(|e| BlockError::BeaconChainError(e.into()))?;
         }
 
+        debug!(
+            self.log,
+            "Applied block to fork choice";
+            "block_root" => format!("{:?}", block_root),
+        );
+
         // Register each attestation in the block with the fork choice service.
         for attestation in &block.body.attestations[..] {
             let _fork_choice_attestation_timer =
@@ -1513,6 +1531,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             }?;
         }
 
+        debug!(
+            self.log,
+            "Applied block attns to fork choice";
+            "block_root" => format!("{:?}", block_root),
+        );
+
         metrics::observe(
             &metrics::OPERATIONS_PER_BLOCK_ATTESTATION,
             block.body.attestations.len() as f64,
@@ -1527,6 +1551,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             Cow::Borrowed(&state),
         ));
         self.store.do_atomically(ops)?;
+
+        debug!(
+            self.log,
+            "Stored block and state in DB";
+            "block_root" => format!("{:?}", block_root),
+        );
 
         // The fork choice write-lock is dropped *after* the on-disk database has been updated.
         // This prevents inconsistency between the two at the expense of concurrency.
@@ -1554,12 +1584,24 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 );
             });
 
+        debug!(
+            self.log,
+            "Updated snapshot cache";
+            "block_root" => format!("{:?}", block_root),
+        );
+
         self.head_tracker
             .register_block(block_root, parent_root, slot);
 
         metrics::stop_timer(db_write_timer);
 
         metrics::inc_counter(&metrics::BLOCK_PROCESSING_SUCCESSES);
+
+        debug!(
+            self.log,
+            "Block import complete";
+            "block_root" => format!("{:?}", block_root),
+        );
 
         Ok(block_root)
     }
@@ -1918,6 +1960,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             self.fork_choice.write().prune()?;
 
             self.observed_block_producers
+                .write()
                 .prune(new_finalized_epoch.start_slot(T::EthSpec::slots_per_epoch()));
 
             self.snapshot_cache
