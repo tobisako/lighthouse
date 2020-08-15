@@ -885,10 +885,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let _timer =
             metrics::start_timer(&metrics::UNAGGREGATED_ATTESTATION_GOSSIP_VERIFICATION_TIMES);
 
-        let resutlt = VerifiedUnaggregatedAttestation::verify(attestation, subnet_id, self).map(|v| {
-            metrics::inc_counter(&metrics::UNAGGREGATED_ATTESTATION_PROCESSING_SUCCESSES);
-            v
-        })
+        let result =
+            VerifiedUnaggregatedAttestation::verify(attestation, subnet_id, self).map(|v| {
+                metrics::inc_counter(&metrics::UNAGGREGATED_ATTESTATION_PROCESSING_SUCCESSES);
+                v
+            });
         println!("beacon chain: verify_unaggregated_attestation_for_gossip complete");
         result
     }
@@ -1453,7 +1454,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // Iterate through the attestations in the block and register them as an "observed
         // attestation". This will stop us from propagating them on the gossip network.
         for a in &signed_block.message.body.attestations {
-            match self.observed_attestations.write().observe_attestation(a, None) {
+            match self
+                .observed_attestations
+                .write()
+                .observe_attestation(a, None)
+            {
                 // If the observation was successful or if the slot for the attestation was too
                 // low, continue.
                 //
