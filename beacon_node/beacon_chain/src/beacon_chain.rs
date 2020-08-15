@@ -884,10 +884,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let _timer =
             metrics::start_timer(&metrics::UNAGGREGATED_ATTESTATION_GOSSIP_VERIFICATION_TIMES);
 
-        VerifiedUnaggregatedAttestation::verify(attestation, subnet_id, self).map(|v| {
+        let resutlt = VerifiedUnaggregatedAttestation::verify(attestation, subnet_id, self).map(|v| {
             metrics::inc_counter(&metrics::UNAGGREGATED_ATTESTATION_PROCESSING_SUCCESSES);
             v
         })
+        println!("beacon chain: verify_unaggregated_attestation_for_gossip complete");
+        result
     }
 
     /// Accepts some `SignedAggregateAndProof` from the network and attempts to verify it,
