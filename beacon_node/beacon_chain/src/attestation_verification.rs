@@ -422,6 +422,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
         // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance).
         //
         // We do not queue future attestations for later processing.
+        println!("running verify");
         verify_propagation_slot_range(chain, &attestation)?;
 
         // Check to ensure that the attestation is "unaggregated". I.e., it has exactly one
@@ -433,6 +434,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
 
         // Attestations must be for a known block. If the block is unknown, we simply drop the
         // attestation and do not delay consideration for later.
+        println!("shuffling ids");
         let shuffling_ids = verify_head_block_is_known(chain, &attestation)?;
 
         let (indexed_attestation, committees_per_slot) =
@@ -442,6 +444,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
                 &shuffling_ids,
             )?;
 
+        println!("subnets");
         let expected_subnet_id = SubnetId::compute_subnet_for_attestation_data::<T::EthSpec>(
             &indexed_attestation.data,
             committees_per_slot,
@@ -466,6 +469,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
          * The attestation is the first valid attestation received for the participating validator
          * for the slot, attestation.data.slot.
          */
+        println!("validator_has_been_observed");
         if chain
             .observed_attesters
             .validator_has_been_observed(&attestation, validator_index as usize)
@@ -478,6 +482,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
         }
 
         // The aggregate signature of the attestation is valid.
+        println!("verifying sig");
         verify_attestation_signature(chain, &indexed_attestation)?;
 
         // Now that the attestation has been fully verified, store that we have received a valid
@@ -497,6 +502,7 @@ impl<T: BeaconChainTypes> VerifiedUnaggregatedAttestation<T> {
             });
         }
 
+        println!("Verification done");
         Ok(Self {
             attestation,
             indexed_attestation,
