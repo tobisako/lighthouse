@@ -535,11 +535,7 @@ impl<T: BeaconChainTypes> Processor<T> {
     /// Attempts to apply to block to the beacon chain. May queue the block for later processing.
     ///
     /// Returns a `bool` which, if `true`, indicates we should forward the block to our peers.
-    pub fn on_block_gossip(
-        &mut self,
-        peer_id: PeerId,
-        verified_block: GossipVerifiedBlock<T>,
-    ) -> bool {
+    pub fn on_block_gossip(&mut self, peer_id: PeerId, verified_block: GossipVerifiedBlock<T>) {
         let block = Box::new(verified_block.block.clone());
         match self.chain.process_block(verified_block) {
             Ok(_block_root) => {
@@ -549,12 +545,6 @@ impl<T: BeaconChainTypes> Processor<T> {
                     "peer_id" => peer_id.to_string()
                 );
 
-                // TODO: It would be better if we can run this _after_ we publish the block to
-                // reduce block propagation latency.
-                //
-                // The `MessageHandler` would be the place to put this, however it doesn't seem
-                // to have a reference to the `BeaconChain`. I will leave this for future
-                // works.
                 match self.chain.fork_choice() {
                     Ok(()) => trace!(
                         self.log,
@@ -572,12 +562,21 @@ impl<T: BeaconChainTypes> Processor<T> {
             Err(BlockError::ParentUnknown { .. }) => {
                 // Inform the sync manager to find parents for this block
                 // This should not occur. It should be checked by `should_forward_block`
-                error!(
+                debug!(
                     self.log,
                     "Block with unknown parent attempted to be processed";
                     "peer_id" => peer_id.to_string()
                 );
                 self.send_to_sync(SyncMessage::UnknownBlock(peer_id, block));
+            }
+            Err(BlockError::BlockIsAlreadyKnown) => {
+                debug!(
+                    self.log,
+                    "Gossiped block is already known";
+                    "peer_id" => peer_id.to_string()
+                );
+                self.network
+                    .report_peer(peer_id, PeerAction::HighToleranceError);
             }
             other => {
                 warn!(
@@ -587,15 +586,8 @@ impl<T: BeaconChainTypes> Processor<T> {
                     "block root" => format!("{}", block.canonical_root()),
                     "block slot" => block.slot()
                 );
-                trace!(
-                    self.log,
-                    "Invalid gossip beacon block ssz";
-                    "ssz" => format!("0x{}", hex::encode(block.as_ssz_bytes())),
-                );
             }
         }
-        // TODO: Update with correct block gossip checking
-        true
     }
 
     pub fn on_unaggregated_attestation_gossip(
@@ -827,7 +819,7 @@ impl<T: EthSpec> HandlerNetworkContext<T> {
     }
 
     /// Reports a peer's action, adjusting the peer's score.
-    pub fn _report_peer(&mut self, peer_id: PeerId, action: PeerAction) {
+    pub fn report_peer(&mut self, peer_id: PeerId, action: PeerAction) {
         self.inform_network(NetworkMessage::ReportPeer { peer_id, action });
     }
 
