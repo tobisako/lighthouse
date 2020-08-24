@@ -61,6 +61,7 @@ pub enum BeaconChainError {
         requested_slot: Slot,
         max_task_runtime: Duration,
     },
+    MissingFinalizedStateRoot(Slot),
     /// Returned when an internal check fails, indicating corrupt data.
     InvariantViolated(String),
     SszTypesError(SszTypesError),

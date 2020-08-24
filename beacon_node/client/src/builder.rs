@@ -296,6 +296,7 @@ where
             .as_ref()
             .ok_or_else(|| "http_server requires a runtime_context")?
             .service_context("http".into());
+        /*
         let network_globals = self
             .network_globals
             .clone()
@@ -309,12 +310,13 @@ where
             network_globals,
             network_chan: network_send,
         };
+        */
 
         let listening_addr = rest_api::start_server(
             context.executor,
             &client_config.rest_api,
             beacon_chain,
-            network_info,
+            // network_info,
             client_config
                 .create_db_path()
                 .map_err(|_| "unable to read data dir")?,

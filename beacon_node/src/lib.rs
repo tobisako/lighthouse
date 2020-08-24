@@ -124,11 +124,12 @@ impl<E: EthSpec> ProductionBeaconNode<E> {
         // Inject the executor into the discv5 network config.
         client_config.network.discv5_config.executor = Some(Box::new(executor));
 
-        let builder = builder
-            .build_beacon_chain()?
-            .network(&client_config.network)
-            .await?
-            .notifier()?;
+        let builder = builder.build_beacon_chain()?;
+        /*
+        .network(&client_config.network)
+        .await?
+        .notifier()?;
+        */
 
         let builder = if client_config.rest_api.enabled {
             builder.http_server(&client_config, &http_eth2_config, events)?

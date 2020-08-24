@@ -56,7 +56,7 @@ pub fn start_server<T: BeaconChainTypes>(
     executor: environment::TaskExecutor,
     config: &Config,
     beacon_chain: Arc<BeaconChain<T>>,
-    network_info: NetworkInfo<T>,
+    // network_info: NetworkInfo<T>,
     db_path: PathBuf,
     freezer_db_path: PathBuf,
     eth2_config: Eth2Config,
@@ -73,8 +73,10 @@ pub fn start_server<T: BeaconChainTypes>(
         let log = inner_log.clone();
         let rest_api_config = rest_api_config.clone();
         let eth2_config = eth2_config.clone();
+        /*
         let network_globals = network_info.network_globals.clone();
         let network_channel = network_info.network_chan.clone();
+        */
         let db_path = db_path.clone();
         let freezer_db_path = freezer_db_path.clone();
         let events = events.clone();
@@ -84,8 +86,10 @@ pub fn start_server<T: BeaconChainTypes>(
                 router::route(
                     req,
                     beacon_chain.clone(),
+                    /*
                     network_globals.clone(),
                     network_channel.clone(),
+                    */
                     rest_api_config.clone(),
                     eth2_config.clone(),
                     log.clone(),

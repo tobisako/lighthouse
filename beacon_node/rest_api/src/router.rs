@@ -20,8 +20,10 @@ use types::{SignedBeaconBlockHash, Slot};
 pub async fn route<T: BeaconChainTypes>(
     req: Request<Body>,
     beacon_chain: Arc<BeaconChain<T>>,
+    /*
     network_globals: Arc<NetworkGlobals<T::EthSpec>>,
     network_channel: NetworkChannel<T::EthSpec>,
+    */
     rest_api_config: Arc<Config>,
     eth2_config: Arc<Eth2Config>,
     local_log: slog::Logger,
@@ -42,6 +44,7 @@ pub async fn route<T: BeaconChainTypes>(
             // Methods for Client
             (&Method::GET, "/node/health") => node::get_health(req),
             (&Method::GET, "/node/version") => node::get_version(req),
+            /*
             (&Method::GET, "/node/syncing") => {
                 // inform the current slot, or set to 0
                 let current_slot = beacon_chain
@@ -65,7 +68,7 @@ pub async fn route<T: BeaconChainTypes>(
             (&Method::GET, "/network/listen_addresses") => {
                 network::get_listen_addresses::<T>(req, network_globals)
             }
-
+            */
             // Methods for Beacon Node
             (&Method::GET, "/beacon/head") => beacon::get_head::<T>(req, beacon_chain),
             (&Method::GET, "/beacon/heads") => beacon::get_heads::<T>(req, beacon_chain),
@@ -113,9 +116,11 @@ pub async fn route<T: BeaconChainTypes>(
                 drop(timer);
                 response.await
             }
+            /*
             (&Method::POST, "/validator/subscribe") => {
                 validator::post_validator_subscriptions::<T>(req, network_channel).await
             }
+            */
             (&Method::GET, "/validator/duties/all") => {
                 validator::get_all_validator_duties::<T>(req, beacon_chain)
             }
@@ -129,9 +134,11 @@ pub async fn route<T: BeaconChainTypes>(
                 drop(timer);
                 response
             }
+            /*
             (&Method::POST, "/validator/block") => {
                 validator::publish_beacon_block::<T>(req, beacon_chain, network_channel, log).await
             }
+            */
             (&Method::GET, "/validator/attestation") => {
                 let timer =
                     metrics::start_timer(&metrics::VALIDATOR_GET_ATTESTATION_REQUEST_RESPONSE_TIME);
@@ -142,6 +149,7 @@ pub async fn route<T: BeaconChainTypes>(
             (&Method::GET, "/validator/aggregate_attestation") => {
                 validator::get_aggregate_attestation::<T>(req, beacon_chain)
             }
+            /*
             (&Method::POST, "/validator/attestations") => {
                 validator::publish_attestations::<T>(req, beacon_chain, network_channel, log).await
             }
@@ -154,7 +162,7 @@ pub async fn route<T: BeaconChainTypes>(
                 )
                 .await
             }
-
+            */
             // Methods for consensus
             (&Method::GET, "/consensus/global_votes") => {
                 consensus::get_vote_count::<T>(req, beacon_chain)
@@ -184,6 +192,7 @@ pub async fn route<T: BeaconChainTypes>(
             }
 
             // Lighthouse specific
+            /*
             (&Method::GET, "/lighthouse/syncing") => {
                 lighthouse::syncing::<T::EthSpec>(req, network_globals)
             }
@@ -195,6 +204,7 @@ pub async fn route<T: BeaconChainTypes>(
             (&Method::GET, "/lighthouse/connected_peers") => {
                 lighthouse::connected_peers::<T::EthSpec>(req, network_globals)
             }
+            */
             _ => Err(ApiError::NotFound(
                 "Request path and/or method not found.".to_owned(),
             )),

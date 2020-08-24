@@ -8,11 +8,11 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use store::hot_cold_store::{process_finalization, HotColdDBError};
-use store::iter::{ParentRootBlockIterator, RootsIterator};
+use store::iter::RootsIterator;
 use store::{Error, ItemStore, StoreOp};
 pub use store::{HotColdDB, MemoryStore};
 use types::*;
-use types::{BeaconState, EthSpec, Hash256, Slot};
+use types::{BeaconState, BeaconStateHash, EthSpec, Hash256, Slot};
 
 /// Trait for migration processes that update the database upon finalization.
 pub trait Migrate<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>:
@@ -22,17 +22,16 @@ pub trait Migrate<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>:
 
     fn process_finalization(
         &self,
-        _state_root: Hash256,
+        _finalized_state_root: BeaconStateHash,
         _new_finalized_state: BeaconState<E>,
-        _max_finality_distance: u64,
         _head_tracker: Arc<HeadTracker>,
-        _old_finalized_block_hash: SignedBeaconBlockHash,
-        _new_finalized_block_hash: SignedBeaconBlockHash,
+        _previous_finalized_checkpoint: Checkpoint,
+        _current_finalized_checkpoint: Checkpoint,
     ) {
     }
 
     /// Traverses live heads and prunes blocks and states of chains that we know can't be built
-    /// upon because finalization would prohibit it.  This is an optimisation intended to save disk
+    /// upon because finalization would prohibit it. This is an optimisation intended to save disk
     /// space.
     ///
     /// Assumptions:
@@ -40,37 +39,59 @@ pub trait Migrate<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>:
     fn prune_abandoned_forks(
         store: Arc<HotColdDB<E, Hot, Cold>>,
         head_tracker: Arc<HeadTracker>,
-        old_finalized_block_hash: SignedBeaconBlockHash,
-        new_finalized_block_hash: SignedBeaconBlockHash,
-        new_finalized_slot: Slot,
+        new_finalized_state_hash: BeaconStateHash,
+        new_finalized_state: &BeaconState<E>,
+        previous_finalized_checkpoint: Checkpoint,
+        current_finalized_checkpoint: Checkpoint,
     ) -> Result<(), BeaconChainError> {
         // There will never be any blocks to prune if there is only a single head in the chain.
         if head_tracker.heads().len() == 1 {
             return Ok(());
         }
 
-        let old_finalized_slot = store
-            .get_block(&old_finalized_block_hash.into())?
-            .ok_or_else(|| BeaconChainError::MissingBeaconBlock(old_finalized_block_hash.into()))?
-            .slot();
+        assert_eq!(
+            new_finalized_state.slot,
+            current_finalized_checkpoint
+                .epoch
+                .start_slot(E::slots_per_epoch())
+        );
+        eprintln!(
+            "Pruning for new finalized checkpoint at epoch: {} (from old {})",
+            current_finalized_checkpoint.epoch, previous_finalized_checkpoint.epoch
+        );
+        eprintln!("new finalized state hash: {:?}", new_finalized_state_hash);
 
-        // Collect hashes from new_finalized_block back to old_finalized_block (inclusive)
-        let mut found_block = false; // hack for `take_until`
-        let newly_finalized_blocks: HashMap<SignedBeaconBlockHash, Slot> =
-            ParentRootBlockIterator::new(&*store, new_finalized_block_hash.into())
-                .take_while(|result| match result {
-                    Ok((block_hash, _)) => {
-                        if found_block {
-                            false
-                        } else {
-                            found_block |= *block_hash == old_finalized_block_hash.into();
-                            true
-                        }
-                    }
-                    Err(_) => true,
-                })
-                .map(|result| result.map(|(block_hash, block)| (block_hash.into(), block.slot())))
-                .collect::<Result<_, _>>()?;
+        let old_finalized_slot = previous_finalized_checkpoint
+            .epoch
+            .start_slot(E::slots_per_epoch());
+        let new_finalized_slot = current_finalized_checkpoint
+            .epoch
+            .start_slot(E::slots_per_epoch());
+        println!("Old fin slot: {}", old_finalized_slot);
+        println!("New finalized slot: {}", new_finalized_slot);
+        let new_finalized_block_hash = current_finalized_checkpoint.root.into();
+
+        // For each slot between the new finalized checkpoint and the old finalized checkpoint,
+        // collect the beacon block root and state root of the canonical chain.
+        let newly_finalized_chain: HashMap<Slot, (SignedBeaconBlockHash, BeaconStateHash)> =
+            std::iter::once(Ok((
+                new_finalized_slot,
+                (new_finalized_block_hash, new_finalized_state_hash),
+            )))
+            .chain(
+                RootsIterator::new(store.clone(), new_finalized_state).map(|res| {
+                    res.map(|(block_root, state_root, slot)| {
+                        (slot, (block_root.into(), state_root.into()))
+                    })
+                }),
+            )
+            .take_while(|res| {
+                res.as_ref()
+                    .map_or(true, |(slot, _)| *slot >= old_finalized_slot)
+            })
+            .collect::<Result<_, _>>()?;
+
+        eprintln!("newly_finalized_chain: {:#?}", newly_finalized_chain);
 
         // We don't know which blocks are shared among abandoned chains, so we buffer and delete
         // everything in one fell swoop.
@@ -79,6 +100,7 @@ pub trait Migrate<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>:
         let mut abandoned_heads: HashSet<Hash256> = HashSet::new();
 
         for (head_hash, head_slot) in head_tracker.heads() {
+            eprintln!("Pruning head {:?} at slot {}", head_hash, head_slot);
             let mut potentially_abandoned_head: Option<Hash256> = Some(head_hash);
             let mut potentially_abandoned_blocks: Vec<(
                 Slot,
@@ -91,46 +113,85 @@ pub trait Migrate<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>:
                 .ok_or_else(|| BeaconStateError::MissingBeaconBlock(head_hash.into()))?
                 .state_root();
 
+            // Iterate backwards from this head, staging blocks and states for deletion.
             let iter = std::iter::once(Ok((head_hash, head_state_hash, head_slot)))
-                .chain(RootsIterator::from_block(Arc::clone(&store), head_hash)?);
+                .chain(RootsIterator::from_block(store.clone(), head_hash)?);
             for maybe_tuple in iter {
-                let (block_hash, state_hash, slot) = maybe_tuple?;
-                if slot < old_finalized_slot {
-                    // We must assume here any candidate chains include old_finalized_block_hash,
-                    // i.e. there aren't any forks starting at a block that is a strict ancestor of
-                    // old_finalized_block_hash.
-                    break;
-                }
-                match newly_finalized_blocks.get(&block_hash.into()).copied() {
-                    // Block is not finalized, mark it and its state for deletion
-                    None => {
-                        potentially_abandoned_blocks.push((
-                            slot,
-                            Some(block_hash.into()),
-                            Some(state_hash.into()),
-                        ));
-                    }
-                    Some(finalized_slot) => {
-                        // Block root is finalized, and we have reached the slot it was finalized
-                        // at: we've hit a shared part of the chain.
-                        if finalized_slot == slot {
-                            // The first finalized block of a candidate chain lies after (in terms
-                            // of slots order) the newly finalized block.  It's not a candidate for
-                            // prunning.
-                            if finalized_slot == new_finalized_slot {
-                                potentially_abandoned_blocks.clear();
-                                potentially_abandoned_head.take();
-                            }
+                let (block_root, state_root, slot) = maybe_tuple?;
 
-                            break;
-                        }
-                        // Block root is finalized, but we're at a skip slot: delete the state only.
-                        else {
+                match newly_finalized_chain.get(&slot) {
+                    None => {
+                        if slot > new_finalized_slot {
+                            eprintln!("Ahead, pruning {:?} (from slot {})", block_root, slot);
                             potentially_abandoned_blocks.push((
                                 slot,
-                                None,
-                                Some(state_hash.into()),
+                                Some(block_root.into()),
+                                Some(state_root.into()),
                             ));
+                        } else if slot >= old_finalized_slot {
+                            panic!("This shouldn't happen");
+                        } else {
+                            // We must assume here any candidate chains include old_finalized_block_hash,
+                            // i.e. there aren't any forks starting at a block that is a strict ancestor of
+                            // old_finalized_block_hash.
+                            break;
+                        }
+                    }
+                    Some((finalized_block_root, finalized_state_root)) => {
+                        match (
+                            block_root == Hash256::from(*finalized_block_root),
+                            state_root == Hash256::from(*finalized_state_root),
+                        ) {
+                            // This fork descends from a newly finalized block.
+                            (true, true) => {
+                                // If the fork descends from the whole finalized chain,
+                                // do not prune it. Otherwise continue to delete all
+                                // of the blocks and states that have been staged for
+                                // deletion so far.
+                                eprintln!(
+                                    "Found common ancestor at slot {}: {:?}",
+                                    slot, block_root
+                                );
+                                if slot == new_finalized_slot {
+                                    eprintln!("Aborting prune");
+                                    potentially_abandoned_blocks.clear();
+                                    potentially_abandoned_head.take();
+                                }
+                                // If there are skipped slots on the fork to be pruned, then
+                                // we will have just staged the common block for deletion.
+                                // Unstage it.
+                                else {
+                                    for (_, block_root, _) in
+                                        potentially_abandoned_blocks.iter_mut().rev()
+                                    {
+                                        if block_root.as_ref() == Some(finalized_block_root) {
+                                            *block_root = None;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                            (true, false) => {
+                                eprintln!("block root: {:?}", block_root);
+                                eprintln!("state root: {:?}", state_root);
+                                eprintln!("finalized state root: {:?}", finalized_state_root);
+                                eprintln!("slot: {}", slot);
+                                unreachable!("this shouldn't happen")
+                            }
+                            (false, true) => unreachable!("this shouldn't happen either"),
+                            (false, false) => {
+                                eprintln!(
+                                    "In chain, pruning {:?} (from slot {})",
+                                    block_root, slot
+                                );
+                                potentially_abandoned_blocks.push((
+                                    slot,
+                                    Some(block_root.into()),
+                                    Some(state_root.into()),
+                                ));
+                            }
                         }
                     }
                 }
@@ -195,24 +256,28 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> Migrate<E, Hot, Cold>
 
     fn process_finalization(
         &self,
-        state_root: Hash256,
+        finalized_state_root: BeaconStateHash,
         new_finalized_state: BeaconState<E>,
-        _max_finality_distance: u64,
         head_tracker: Arc<HeadTracker>,
-        old_finalized_block_hash: SignedBeaconBlockHash,
-        new_finalized_block_hash: SignedBeaconBlockHash,
+        previous_finalized_checkpoint: Checkpoint,
+        current_finalized_checkpoint: Checkpoint,
     ) {
         if let Err(e) = Self::prune_abandoned_forks(
             self.db.clone(),
             head_tracker,
-            old_finalized_block_hash,
-            new_finalized_block_hash,
-            new_finalized_state.slot,
+            finalized_state_root.into(),
+            &new_finalized_state,
+            previous_finalized_checkpoint,
+            current_finalized_checkpoint,
         ) {
             eprintln!("Pruning error: {:?}", e);
         }
 
-        if let Err(e) = process_finalization(self.db.clone(), state_root, &new_finalized_state) {
+        if let Err(e) = process_finalization(
+            self.db.clone(),
+            finalized_state_root.into(),
+            &new_finalized_state,
+        ) {
             // This migrator is only used for testing, so we just log to stderr without a logger.
             eprintln!("Migration error: {:?}", e);
         }
@@ -220,12 +285,11 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> Migrate<E, Hot, Cold>
 }
 
 type MpscSender<E> = mpsc::Sender<(
-    Hash256,
+    BeaconStateHash,
     BeaconState<E>,
     Arc<HeadTracker>,
-    SignedBeaconBlockHash,
-    SignedBeaconBlockHash,
-    Slot,
+    Checkpoint,
+    Checkpoint,
 )>;
 
 /// Migrator that runs a background thread to migrate state from the hot to the cold database.
@@ -243,34 +307,26 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> Migrate<E, Hot, Cold>
         Self { db, tx_thread, log }
     }
 
-    /// Perform the freezing operation on the database,
     fn process_finalization(
         &self,
-        finalized_state_root: Hash256,
+        finalized_state_root: BeaconStateHash,
         new_finalized_state: BeaconState<E>,
-        max_finality_distance: u64,
         head_tracker: Arc<HeadTracker>,
-        old_finalized_block_hash: SignedBeaconBlockHash,
-        new_finalized_block_hash: SignedBeaconBlockHash,
+        previous_finalized_checkpoint: Checkpoint,
+        current_finalized_checkpoint: Checkpoint,
     ) {
-        if !self.needs_migration(new_finalized_state.slot, max_finality_distance) {
-            return;
-        }
-
         let (ref mut tx, ref mut thread) = *self.tx_thread.lock();
 
-        let new_finalized_slot = new_finalized_state.slot;
         if let Err(tx_err) = tx.send((
             finalized_state_root,
             new_finalized_state,
             head_tracker,
-            old_finalized_block_hash,
-            new_finalized_block_hash,
-            new_finalized_slot,
+            previous_finalized_checkpoint,
+            current_finalized_checkpoint,
         )) {
             let (new_tx, new_thread) = Self::spawn_thread(self.db.clone(), self.log.clone());
 
-            drop(mem::replace(tx, new_tx));
+            *tx = new_tx;
             let old_thread = mem::replace(thread, new_thread);
 
             // Join the old thread, which will probably have panicked, or may have
@@ -290,53 +346,36 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> Migrate<E, Hot, Cold>
 }
 
 impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Hot, Cold> {
-    /// Return true if a migration needs to be performed, given a new `finalized_slot`.
-    fn needs_migration(&self, finalized_slot: Slot, max_finality_distance: u64) -> bool {
-        let finality_distance = finalized_slot - self.db.get_split_slot();
-        finality_distance > max_finality_distance
-    }
-
-    #[allow(clippy::type_complexity)]
     /// Spawn a new child thread to run the migration process.
     ///
     /// Return a channel handle for sending new finalized states to the thread.
     fn spawn_thread(
         db: Arc<HotColdDB<E, Hot, Cold>>,
         log: Logger,
-    ) -> (
-        mpsc::Sender<(
-            Hash256,
-            BeaconState<E>,
-            Arc<HeadTracker>,
-            SignedBeaconBlockHash,
-            SignedBeaconBlockHash,
-            Slot,
-        )>,
-        thread::JoinHandle<()>,
-    ) {
+    ) -> (MpscSender<E>, thread::JoinHandle<()>) {
         let (tx, rx) = mpsc::channel();
         let thread = thread::spawn(move || {
             while let Ok((
                 state_root,
                 state,
                 head_tracker,
-                old_finalized_block_hash,
-                new_finalized_block_hash,
-                new_finalized_slot,
+                previous_finalized_checkpoint,
+                current_finalized_checkpoint,
             )) = rx.recv()
             {
                 match Self::prune_abandoned_forks(
                     db.clone(),
                     head_tracker,
-                    old_finalized_block_hash,
-                    new_finalized_block_hash,
-                    new_finalized_slot,
+                    state_root,
+                    &state,
+                    previous_finalized_checkpoint,
+                    current_finalized_checkpoint,
                 ) {
                     Ok(()) => {}
                     Err(e) => warn!(log, "Block pruning failed: {:?}", e),
                 }
 
-                match process_finalization(db.clone(), state_root, &state) {
+                match process_finalization(db.clone(), state_root.into(), &state) {
                     Ok(()) => {}
                     Err(Error::HotColdDBError(HotColdDBError::FreezeSlotUnaligned(slot))) => {
                         debug!(
